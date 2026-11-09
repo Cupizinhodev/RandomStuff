@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Download repository
         uses: actions/checkout@v4
 
       - name: Setup Java 25
@@ -26,42 +26,76 @@ jobs:
           distribution: temurin
           java-version: '25'
 
-      - name: Extract project
+      - name: Extract project ZIP
         shell: bash
         run: |
           set -euo pipefail
 
           ZIP=""
-          for f in RandomStuff_CORRIGIDO.zip RandomStuff_PRONTO_PARA_REPLIT_GERAR_JAR.zip; do
-            if [ -f "$f" ]; then ZIP="$f"; break; fi
+
+          for FILE in \
+            RandomStuff_CORRIGIDO.zip \
+            RandomStuff_PRONTO_PARA_REPLIT_GERAR_JAR.zip
+          do
+            if [ -f "$FILE" ]; then
+              ZIP="$FILE"
+              break
+            fi
           done
 
           if [ -z "$ZIP" ]; then
-            echo "::error::ZIP não encontrado!"
+            echo "::error::ZIP do projeto não encontrado!"
             ls -la
             exit 1
           fi
 
           mkdir -p project
-          unzip -q "$ZIP" -d project
+
+          echo "Extraindo: $ZIP"
+
+          unzip -q "$ZIP" -d project \
+            -x '*/assets_originais/*' \
+               '*/assets_originais/**'
 
           WRAPPER="$(find project -type f -name gradlew -print -quit)"
 
           if [ -z "$WRAPPER" ]; then
             echo "::error::Gradle Wrapper não encontrado!"
-            find project -maxdepth 4 -type f
+            find project -maxdepth 4 -type f | head -100
             exit 1
           fi
 
-          echo "GRADLE_DIR=$(dirname "$WRAPPER")" >> "$GITHUB_ENV"
+          GRADLE_DIR="$(dirname "$WRAPPER")"
 
-      - name: Build mod
+          echo "GRADLE_DIR=$GRADLE_DIR" >> "$GITHUB_ENV"
+
+          echo "Projeto extraído com sucesso!"
+          echo "Diretório: $GRADLE_DIR"
+
+      - name: Build Minecraft Mod
         shell: bash
         run: |
           set -euo pipefail
+
           cd "$GRADLE_DIR"
-          chmod +x ./gradlew
-          ./gradlew --no-daemon build --stacktrace
+
+          chmod +x gradlew
+
+          ./gradlew --no-daemon clean build --stacktrace
+
+      - name: Verify generated JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Procurando arquivos JAR..."
+
+          find project -type f -path '*/build/libs/*.jar' -print
+
+          if ! find project -type f -path '*/build/libs/*.jar' | grep -q .; then
+            echo "::error::Nenhum JAR foi gerado!"
+            exit 1
+          fi
 
       - name: Upload JAR
         if: success()
