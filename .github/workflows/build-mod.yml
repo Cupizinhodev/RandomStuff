@@ -3,6 +3,10 @@ name: Build RandomStuff
 
 on:
   push:
+    paths:
+      - 'RandomStuff_CORRIGIDO.zip'
+      - 'RandomStuff_PRONTO_PARA_REPLIT_GERAR_JAR.zip'
+      - '.github/workflows/build-mod.yml'
   workflow_dispatch:
 
 permissions:
@@ -13,34 +17,51 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Java 25
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
-          cache: gradle
 
       - name: Extract project
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
+
           ZIP=""
           for f in RandomStuff_CORRIGIDO.zip RandomStuff_PRONTO_PARA_REPLIT_GERAR_JAR.zip; do
             if [ -f "$f" ]; then ZIP="$f"; break; fi
           done
-          test -n "$ZIP"
+
+          if [ -z "$ZIP" ]; then
+            echo "::error::ZIP não encontrado!"
+            ls -la
+            exit 1
+          fi
+
           mkdir -p project
           unzip -q "$ZIP" -d project
+
           WRAPPER="$(find project -type f -name gradlew -print -quit)"
-          test -n "$WRAPPER"
+
+          if [ -z "$WRAPPER" ]; then
+            echo "::error::Gradle Wrapper não encontrado!"
+            find project -maxdepth 4 -type f
+            exit 1
+          fi
+
           echo "GRADLE_DIR=$(dirname "$WRAPPER")" >> "$GITHUB_ENV"
 
       - name: Build mod
+        shell: bash
         run: |
+          set -euo pipefail
           cd "$GRADLE_DIR"
           chmod +x ./gradlew
-          ./gradlew --no-daemon build
+          ./gradlew --no-daemon build --stacktrace
 
       - name: Upload JAR
         if: success()
@@ -49,3 +70,4 @@ jobs:
           name: RandomStuff-JAR
           path: project/**/build/libs/*.jar
           if-no-files-found: error
+          retention-days: 14
